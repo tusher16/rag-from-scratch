@@ -36,7 +36,7 @@ def build_retriever(vectorstore: Chroma):
         },
     )
 
-    reranker = FlashrankRerank(top_n=config.RERANK_TOP_N)
+    reranker = FlashrankRerank(top_n=config.RERANK_TOP_N, score_threshold=0.1)
 
     retriever = ContextualCompressionRetriever(
         base_compressor=reranker,

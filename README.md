@@ -1,6 +1,30 @@
 # RAG From Scratch V1
 
-A production-style Retrieval Augmented Generation (RAG) pipeline built from scratch using LangChain, BGE-M3, ChromaDB, and Qwen2.5 3B.
+A production-style Retrieval Augmented Generation (RAG) pipeline built from scratch using LangChain, BGE-M3, ChromaDB, and DeepSeek R1.
+
+---
+
+## Evaluation Results (RAGAS)
+
+Evaluated on 22 questions from a LayoutLMv3 research paper.
+
+| Metric | Score | Notes |
+|---|---|---|
+| **Faithfulness** | **0.42** | LLM sometimes goes beyond retrieved context |
+| **Answer Relevancy** | **0.73** | Answers are generally on-topic |
+
+**Known issues found during evaluation:**
+- PyPDF garbles table content — F1 score tables not retrieved cleanly
+- Small LLM (3B) doesn't always respect "answer only from context"
+- Dense retrieval misses exact-match queries (e.g. specific numbers)
+
+**Planned improvements for V2:**
+- Better PDF parsing with `unstructured`
+- Hybrid search (vector + BM25)
+- Larger LLM (7B+)
+- LangSmith tracing — observe every retrieval and generation call
+- Multi-PDF support — ingest entire folders with deduplication
+- Streamlit UI — simple chat interface instead of terminal
 
 ---
 
@@ -11,10 +35,13 @@ Phase 1 — Ingestion
 PDF → PyPDFLoader → RecursiveCharacterTextSplitter → BAAI/bge-m3 → ChromaDB
 
 Phase 2 — Retrieval
-Query → BGE-M3 Embed → MMR Search (top-10) → FlashrankRerank (top-3)
+Query → BGE-M3 Embed → MMR Search (top-20) → FlashrankRerank (top-10)
 
 Phase 3 — Generation
-Query + Chunks → Qwen2.5:3b → Grounded Answer
+Query + Chunks → DeepSeek R1 0528 8B → Grounded Answer
+
+Phase 4 — Evaluation
+Questions + Answers + Contexts → RAGAS → Faithfulness + Answer Relevancy
 ```
 
 ---
@@ -27,9 +54,24 @@ Query + Chunks → Qwen2.5:3b → Grounded Answer
 | Chunking | RecursiveCharacterTextSplitter |
 | Embeddings | BAAI/bge-m3 (MPS accelerated) |
 | Vector DB | ChromaDB (persistent, local) |
-| Reranker | FlashrankRerank |
-| LLM | Qwen2.5 3B Instruct (LM Studio) |
+| Reranker | FlashrankRerank (ms-marco-MultiBERT-L-12) |
+| LLM | DeepSeek R1 0528 Qwen3 8B (LM Studio) |
+| Evaluation | RAGAS |
 | Framework | LangChain |
+
+---
+
+## Key Config Decisions
+
+| Parameter | Value | Why |
+|---|---|---|
+| `CHUNK_SIZE` | 512 | Sweet spot — big enough for context, small enough for precision |
+| `CHUNK_OVERLAP` | 64 | 12.5% overlap prevents losing meaning at chunk boundaries |
+| `TOP_K` | 20 | Cast a wide net — reranker filters down later |
+| `RERANK_TOP_N` | 10 | Increased from 3 → 10 after finding table chunks were being dropped by reranker |
+
+> **Why TOP_K=20 and RERANK_TOP_N=10?**
+> Vector search is fast but approximate. We fetch 20 candidates with MMR, then the cross-encoder reranker (ms-marco) scores each (query, chunk) pair together and picks the best 10. We increased RERANK_TOP_N from 3 to 10 after discovering that table chunks (garbled by PyPDF) were scoring low in reranking but contained critical answers — passing more chunks to the LLM fixed this.
 
 ---
 
@@ -40,11 +82,14 @@ rag-from-scratch/
 ├── data/
 │   └── docs/            ← drop your PDFs here
 ├── vectorstore/         ← ChromaDB persists here (auto-created)
+├── eval/
+│   ├── evaluate.py      ← RAGAS evaluation pipeline
+│   └── test_dataset.py  ← 22 test questions with ground truths
 ├── src/
 │   ├── __init__.py
 │   ├── ingestion.py     ← Phase 1
 │   ├── retrieval.py     ← Phase 2
-│   └── generation.py   ← Phase 3
+│   └── generation.py    ← Phase 3
 ├── main.py              ← entrypoint
 ├── config.py            ← all settings
 ├── requirements.txt
@@ -58,7 +103,7 @@ rag-from-scratch/
 ### 1. Prerequisites
 
 - Python 3.10+
-- [LM Studio](https://lmstudio.ai) with `qwen2.5-3b-instruct` loaded and server running on `http://127.0.0.1:1234`
+- [LM Studio](https://lmstudio.ai) with `deepseek/deepseek-r1-0528-qwen3-8b` loaded and server running on `http://127.0.0.1:1234`
 
 ### 2. Clone and install
 
@@ -92,25 +137,17 @@ First run downloads BAAI/bge-m3 (~2.3GB) — cached after that.
 python3 main.py
 ```
 
----
+### 6. Evaluate
 
-## Configuration
-
-All settings are in `config.py`:
-
-```python
-CHUNK_SIZE    = 512    # characters per chunk
-CHUNK_OVERLAP = 64     # overlap between chunks
-TOP_K         = 20     # candidates fetched from vector DB
-RERANK_TOP_N  = 5      # final chunks after reranking
-EMBED_MODEL   = "BAAI/bge-m3"
-LLM_MODEL     = "qwen2.5:3b"
+```bash
+python3 eval/evaluate.py
 ```
 
 ---
 
 ## Notes
 
-- Embeddings run on Apple Silicon MPS by default — change `"mps"` to `"cpu"` in `get_embedding_model()` if needed
-- ChromaDB persists to `vectorstore/` — re-ingestion skips already-indexed files via MD5 hash check
-- LLM is instructed to answer only from retrieved context — it will say "I don't have enough information" if the answer is not in the docs
+- Embeddings run on Apple Silicon MPS — change `"mps"` to `"cpu"` if needed
+- ChromaDB persists to `vectorstore/` — uses MD5 hash to skip already-ingested files
+- LLM answers only from retrieved context — says "I don't have enough information" if answer not found
+- RAGAS evaluation uses Qwen2.5 3B as judge (faster) and BGE-M3 on CPU to avoid memory pressure

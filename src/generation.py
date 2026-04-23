@@ -32,7 +32,7 @@ def build_rag_chain(retriever):
     llm = ChatOpenAI(
         base_url="http://127.0.0.1:1234/v1",
         api_key="lm-studio",
-        model="qwen2.5-3b-instruct-mlx",
+        model="deepseek/deepseek-r1-0528-qwen3-8b",
         temperature=0,
     )
 
@@ -51,7 +51,7 @@ def build_rag_chain(retriever):
         | StrOutputParser()
     )
 
-    print(f"RAG chain ready — LLM: qwen2.5-3b-instruct-mlx")
+    print(f"RAG chain ready — LLM: deepseek/deepseek-r1-0528-qwen3-8b")
     return chain
 
 def ask(question: str, chain) -> str:
