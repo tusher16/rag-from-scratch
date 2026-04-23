@@ -2,6 +2,8 @@ import sys
 from src.ingestion import run_ingestion
 from src.retrieval import load_vectorstore, build_retriever
 from src.generation import build_rag_chain, ask
+from dotenv import load_dotenv
+load_dotenv()
 
 
 def main():
