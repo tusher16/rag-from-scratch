@@ -22,7 +22,7 @@ Evaluated on 22 questions from a LayoutLMv3 research paper.
 - Better PDF parsing with `unstructured`
 - Hybrid search (vector + BM25)
 - Larger LLM (7B+)
-- LangSmith tracing — observe every retrieval and generation call
+- ~~LangSmith tracing~~ ✅ Done
 - Multi-PDF support — ingest entire folders with deduplication
 - Streamlit UI — simple chat interface instead of terminal
 
